@@ -8,10 +8,10 @@ const mime = require('mime');
 const fs = require('fs');
 
 class Client {
-    constructor(serverless, options) {
+    constructor(serverless) {
         this.serverless = serverless;
         const AWS = this.serverless.getProvider('aws');
-        
+
         this.s3 = new AWS.sdk.S3({
             region: this.serverless.service.provider.region,
             apiVersion: '2006-03-01'
@@ -46,14 +46,11 @@ class Client {
                     .then(this._processDeployment.bind(this));
             }
         };
-
-        let th = this;
     }
 
     _validateAndPrepare() {
         const Utils = this.serverless.utils;
         const Error = this.serverless.classes.Error;
-
 
         if (!Utils.dirExistsSync(path.join(this.serverless.config.servicePath, 'client', 'dist'))) {
             return BbPromise.reject(new Error('Could not find "client/dist" folder in your project root.'));
@@ -69,10 +66,9 @@ class Client {
         return BbPromise.resolve();
     }
 
-
     _processDeployment() {
-        this.serverless.cli.log('Deploying client to stage "' + this.serverless.service.provider.stage + '" in region "' + this.serverless.service.provider.region + '"...');
-
+        this.serverless.cli.log('Deploying client to stage "' + this.serverless.service.provider.stage
+            + '" in region "' + this.serverless.service.provider.region + '"...');
 
         const listBuckets = (data) => {
             data.Buckets.forEach((bucket) => {
@@ -81,7 +77,7 @@ class Client {
                     this.serverless.cli.log(`Bucket ${this.bucketName} already exists`);
                 }
             });
-        }
+        };
 
         const listObjectsInBucket = () => {
             if (!this.bucketExists) return BbPromise.resolve();
@@ -92,7 +88,7 @@ class Client {
                 Bucket: this.bucketName
             };
             return this.s3.listObjects(params).promise();
-        }
+        };
 
         const deleteObjectsFromBucket = (data) => {
             if (!this.bucketExists) return BbPromise.resolve();
@@ -101,19 +97,19 @@ class Client {
 
             if (!data.Contents[0]) {
                 return BbPromise.resolve();
-            } else {
-                let Objects = _.map(data.Contents, function (content) {
-                    return _.pick(content, 'Key');
-                });
-
-                let params = {
-                    Bucket: this.bucketName,
-                    Delete: {Objects: Objects}
-                };
-
-                return this.s3.deleteObjects(params).promise();
             }
-        }
+
+            let Objects = _.map(data.Contents, function (content) {
+                return _.pick(content, 'Key');
+            });
+
+            let params = {
+                Bucket: this.bucketName,
+                Delete: {Objects: Objects}
+            };
+
+            return this.s3.deleteObjects(params).promise();
+        };
 
         const createBucket = () => {
             if (this.bucketExists) return BbPromise.resolve();
@@ -124,7 +120,7 @@ class Client {
             };
 
             return this.s3.createBucket(params).promise();
-        }
+        };
 
         const configureBucket = () => {
             this.serverless.cli.log(`Configuring website bucket ${this.bucketName}...`);
@@ -138,7 +134,7 @@ class Client {
             };
 
             return this.s3.putBucketWebsite(params).promise();
-        }
+        };
 
         const configurePolicyForBucket = () => {
             this.serverless.cli.log(`Configuring policy for bucket ${this.bucketName}...`);
@@ -165,7 +161,7 @@ class Client {
             };
 
             return this.s3.putBucketPolicy(params).promise();
-        }
+        };
 
         return this.s3.listBuckets({})
             .promise()
@@ -181,46 +177,41 @@ class Client {
     }
 
     _uploadDirectory(directoryPath) {
-        let _this = this,
-            readDirectory = _.partial(fs.readdir, directoryPath);
+        const readDirectory = _.partial(fs.readdir, directoryPath);
 
-        async.waterfall([readDirectory, function (files) {
-            files = _.map(files, function (file) {
+        async.waterfall([readDirectory, (files) => {
+            files = _.map(files, (file) => {
                 return path.join(directoryPath, file);
             });
 
-            async.each(files, function (path) {
-                fs.stat(path, _.bind(function (err, stats) {
-
+            async.each(files, (path) => {
+                fs.stat(path, (err, stats) => {
                     return stats.isDirectory()
-                        ? _this._uploadDirectory(path)
-                        : _this._uploadFile(path);
-                }, _this));
+                        ? this._uploadDirectory(path)
+                        : this._uploadFile(path);
+                });
             });
         }]);
     }
 
     _uploadFile(filePath) {
-        let _this = this,
-            fileKey = filePath.replace(_this.clientPath, '').substr(1).replace('\\', '/');
+        const fileKey = filePath.replace(this.clientPath, '').substr(1).replace('\\', '/');
 
-        this.serverless.cli.log(`Uploading file ${fileKey} to bucket ${_this.bucketName}...`);
+        this.serverless.cli.log(`Uploading file ${fileKey} to bucket ${this.bucketName}...`);
 
-        fs.readFile(filePath, function (err, fileBuffer) {
+        fs.readFile(filePath, (err, fileBuffer) => {
 
             let params = {
-                Bucket: _this.bucketName,
+                Bucket: this.bucketName,
                 Key: fileKey,
                 Body: fileBuffer,
                 ContentType: mime.lookup(filePath)
             };
 
             // TODO: remove browser caching
-            return _this.s3.putObject(params).promise();
+            return this.s3.putObject(params).promise();
         });
-
     }
-
 }
 
 module.exports = Client;
